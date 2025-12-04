@@ -3,7 +3,8 @@
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Maintenance-Active-orange)
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)]([https://crypto-portfolio-optimizer-mvqrj2y3de4xlcsxrpzswy.streamlit.app/#crypto-portfolio-optimization-markowitz-model])
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://crypto-portfolio-optimizer-mvqrj2y3de4xlcsxrpzswy.streamlit.app/)
+
 ## 📌 Gambaran Umum (Overview)
 Repository ini berisi implementasi algoritma optimasi portofolio mata uang kripto (Cryptocurrency) menggunakan pendekatan **Modern Portfolio Theory (MPT)**.
 
