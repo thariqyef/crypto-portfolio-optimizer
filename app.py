@@ -22,7 +22,7 @@ default_tickers = "BTC-USD, ETH-USD, SOL-USD, BNB-USD, XRP-USD"
 tickers_input = st.sidebar.text_area("Masukkan Ticker (pisahkan koma)", default_tickers)
 tickers = [t.strip() for t in tickers_input.split(',')]
 
-# Input Tanggal (Saran: Mulai 2021 biar dapet siklus Bull & Bear)
+# Input Tanggal
 start_date = st.sidebar.date_input("Mulai Tanggal", pd.to_datetime("2021-01-01"))
 end_date = st.sidebar.date_input("Sampai Tanggal", pd.to_datetime("today"))
 
@@ -35,7 +35,7 @@ if st.sidebar.button("🚀 Optimalkan Portofolio"):
             # Tarik data
             data = yf.download(tickers, start=start_date, end=end_date)['Close']
             
-            # Hitung Log Returns
+            # Hitung Log Returns (Harian)
             log_returns = np.log(data / data.shift(1)).dropna()
             
             # Annualize Mean & Covariance (365 hari crypto)
@@ -63,6 +63,16 @@ if st.sidebar.button("🚀 Optimalkan Portofolio"):
         p_ret, p_var = portfolio_performance(weights, mean_returns, cov_matrix)
         return -(p_ret - risk_free_rate) / p_var
 
+    # [NEW] Function Hitung CVaR (Conditional Value at Risk)
+    def calculate_cvar(returns, weights, alpha=0.05):
+        # Hitung return harian portofolio: w1*r1 + w2*r2 ...
+        portfolio_returns = (returns * weights).sum(axis=1)
+        # Cari batas kerugian terburuk (misal 5% terburuk)
+        cutoff = portfolio_returns.quantile(alpha)
+        # Rata-rata dari kerugian di bawah batas itu
+        cvar = portfolio_returns[portfolio_returns <= cutoff].mean()
+        return cvar, portfolio_returns
+
     # Setup Optimizer
     num_assets = len(tickers)
     args = (mean_returns, cov_matrix)
@@ -78,6 +88,9 @@ if st.sidebar.button("🚀 Optimalkan Portofolio"):
     opt_ret, opt_std = portfolio_performance(optimal_weights, mean_returns, cov_matrix)
     opt_sharpe = opt_ret / opt_std
 
+    # Hitung CVaR
+    cvar_val, portfolio_daily_ret = calculate_cvar(log_returns, optimal_weights)
+
     # --- 3. TAMPILKAN HASIL ---
     
     # Kolom Layout
@@ -91,21 +104,24 @@ if st.sidebar.button("🚀 Optimalkan Portofolio"):
             'Asset': tickers,
             'Weight': optimal_weights
         })
-        # Filter yang bobotnya kecil biar grafik bersih
         df_weights = df_weights[df_weights['Weight'] > 0.0001]
         
         fig_pie = px.pie(df_weights, values='Weight', names='Asset', 
-                         title='Optimal Allocation', hole=0.4)
+                          title='Optimal Allocation', hole=0.4)
         st.plotly_chart(fig_pie, use_container_width=True)
         
+        st.write("### Key Metrics")
         st.metric("Expected Annual Return", f"{opt_ret*100:.2f}%")
         st.metric("Annual Volatility (Risk)", f"{opt_std*100:.2f}%")
         st.metric("Sharpe Ratio", f"{opt_sharpe:.2f}")
+        # [NEW] Tampilkan CVaR
+        st.metric("CVaR (Worst 5% Loss)", f"{cvar_val*100:.2f}%", 
+                  help="Conditional Value at Risk: Rata-rata kerugian saat pasar crash parah (Confidence Level 95%)")
 
     with col2:
         st.subheader("📈 Efficient Frontier")
         
-        # Monte Carlo Simulation untuk Visualisasi
+        # Monte Carlo Simulation
         num_portfolios = 3000
         results = np.zeros((3, num_portfolios))
         
@@ -119,15 +135,11 @@ if st.sidebar.button("🚀 Optimalkan Portofolio"):
 
         # Plotly Scatter Plot
         fig_ef = go.Figure()
-        
-        # Titik-titik acak
         fig_ef.add_trace(go.Scatter(
             x=results[0,:], y=results[1,:], mode='markers',
             marker=dict(color=results[2,:], colorscale='Viridis', showscale=True, size=5, opacity=0.5),
             name='Random Portfolios'
         ))
-        
-        # Titik Optimal (Bintang)
         fig_ef.add_trace(go.Scatter(
             x=[opt_std], y=[opt_ret], mode='markers',
             marker=dict(color='red', size=20, symbol='star'),
@@ -141,6 +153,35 @@ if st.sidebar.button("🚀 Optimalkan Portofolio"):
             height=500
         )
         st.plotly_chart(fig_ef, use_container_width=True)
+
+    # --- 4. [NEW] BACKTESTING SECTION ---
+    st.markdown("---")
+    st.subheader("🔙 Historical Backtest (Simulation)")
+    st.markdown("Bagaimana performa portofolio ini jika Anda membelinya sejak tanggal awal yang dipilih?")
+
+    # Hitung Cumulative Return Portofolio
+    # (1 + r_harian).cumprod() -> Pertumbuhan modal
+    cum_return_portfolio = (1 + portfolio_daily_ret).cumprod()
+
+    # Hitung Benchmark (Misal: 100% Bitcoin)
+    if 'BTC-USD' in tickers:
+        btc_ret = log_returns['BTC-USD']
+        cum_return_btc = (1 + btc_ret).cumprod()
+    else:
+        # Kalau user gak pilih BTC, pake rata-rata pasar aja
+        cum_return_btc = (1 + log_returns.mean(axis=1)).cumprod()
+
+    # Gabung Dataframe buat Plotting
+    df_backtest = pd.DataFrame({
+        "Optimization Model": cum_return_portfolio,
+        "Benchmark (BTC/Avg)": cum_return_btc
+    })
+
+    # Plot Line Chart
+    fig_backtest = px.line(df_backtest, 
+                           title='Growth of $1 Investment (Cumulative Return)',
+                           labels={'value': 'Growth Multiplier', 'variable': 'Strategy'})
+    st.plotly_chart(fig_backtest, use_container_width=True)
 
 else:
     st.info("👈 Masukkan parameter di sidebar dan klik 'Optimalkan Portofolio' untuk memulai.")
